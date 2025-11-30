@@ -29,6 +29,8 @@ const authToggle = document.getElementById('toggle-auth');
 const authEmail = document.getElementById('auth-email');
 const authTitle = document.getElementById('auth-title');
 const authMessage = document.getElementById('auth-message');
+const authUsernameInput = document.getElementById('auth-username');
+const authPasswordInput = document.getElementById('auth-password');
 
 // Профиль/Настройки элементы
 const profileButton = document.getElementById('user-profile-button');
@@ -231,36 +233,46 @@ function appendMessage(data) {
 
 // --- API ХЕНДЛЕРЫ ---
 
-/** Проверка куки при загрузке страницы */
-async function checkAuthSession() {
+/**
+ * Инициализирует сессию: либо проверяет куки и загружает данные, либо
+ * просто загружает данные (друзей/заявки/socket) после успешного логина.
+ * @param {boolean} skipUiToggle - Флаг, указывающий, нужно ли переключать UI (true, если UI уже переключен в authForm.submit)
+ */
+async function initializeSession(skipUiToggle = false) {
     try {
         const response = await fetch(`${API_URL}/verify`);
         if (response.ok) {
             const data = await response.json();
-            currentUserId = data.userId;
-            updateUserInfo(data.username, data.avatarPath);
+            
+            // Если мы не пришли из формы логина, нам нужно обновить всю информацию
+            if (!skipUiToggle) {
+                 currentUserId = data.userId;
+                 updateUserInfo(data.username, data.avatarPath);
+                 toggleAppVisibility(true);
+            }
+            
+            // Загружаем списки друзей/заявок и регистрируем сокет
             renderFriends(data.friends);
             renderRequests(data.requestsReceived);
-            toggleAppVisibility(true);
-            
-            // Регистрируем сокет с ID пользователя
-            socket.emit('register_socket', { userId: currentUserId, username: data.username });
+            socket.emit('register_socket', { userId: data.userId, username: data.username });
 
-        } else {
+        } else if (!skipUiToggle) {
             toggleAppVisibility(false);
             // Это нормально, если куки нет при первом входе
         }
     } catch (error) {
         console.error('Ошибка проверки аутентификации:', error);
-        toggleAppVisibility(false);
+        if (!skipUiToggle) {
+             toggleAppVisibility(false);
+        }
     }
 }
 
 /** Отправка формы авторизации/регистрации */
 authForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const username = document.getElementById('auth-username').value;
-    const password = document.getElementById('auth-password').value;
+    const username = authUsernameInput.value;
+    const password = authPasswordInput.value;
     const email = isRegisterMode ? authEmail.value : undefined;
 
     const endpoint = isRegisterMode ? `${API_URL}/register` : `${API_URL}/login`;
@@ -279,8 +291,18 @@ authForm.addEventListener('submit', async (e) => {
         showMessage(authMessage, data.message, isError);
 
         if (response.ok) {
-            // После успешного входа/регистрации сразу проверяем сессию, чтобы загрузить данные
-            checkAuthSession(); 
+            // 1. Обновляем UI мгновенно, используя данные ответа
+            currentUserId = data.userId;
+            updateUserInfo(data.username, data.avatarPath);
+            toggleAppVisibility(true);
+            
+            // Очистка полей после успешной отправки для безопасности и UX
+            authUsernameInput.value = '';
+            authPasswordInput.value = '';
+            authEmail.value = '';
+            
+            // 2. В фоновом режиме загружаем списки друзей и регистрируем сокет.
+            initializeSession(true); 
         }
     } catch (error) {
         console.error('Ошибка сети:', error);
@@ -330,9 +352,6 @@ dmForm.addEventListener('submit', async (e) => {
 
     if (file) {
         // 1. Обработка файла
-        
-        // В реальном проекте здесь будет отправка файла через XHR или fetch, 
-        // но для Socket.IO мы имитируем это, отправляя данные и получая URL обратно.
         
         const reader = new FileReader();
         reader.onload = function(e) {
@@ -442,9 +461,11 @@ socket.on('dm_message', (data) => {
 authToggle.addEventListener('click', () => {
     isRegisterMode = !isRegisterMode;
     authTitle.textContent = isRegisterMode ? 'Регистрация' : 'Вход';
-    authEmail.style.display = isRegisterMode ? 'block' : 'none';
+    // ИСПРАВЛЕНИЕ: Гарантируем корректное отображение/скрытие поля Email
+    authEmail.style.display = isRegisterMode ? 'block' : 'none'; 
     document.getElementById('auth-submit').textContent = isRegisterMode ? 'Зарегистрироваться' : 'Войти';
     authToggle.textContent = isRegisterMode ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Зарегистрироваться';
+    authMessage.classList.add('hidden'); // Очищаем сообщение
 });
 
 profileButton.addEventListener('click', () => settingsModal.classList.remove('hidden'));
@@ -488,4 +509,4 @@ avatarInput.addEventListener('change', function() {
 });
 
 // --- ИНИЦИАЛИЗАЦИЯ ---
-window.onload = checkAuthSession;
+window.onload = () => initializeSession(false);
