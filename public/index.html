@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telescord | Чат и ЛС</title>
+    <!-- Подключение шрифтов: Inter и Poppins -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@500;600&display=swap" rel="stylesheet">
+    <!-- Подключение иконок Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- Подключение стилей -->
+    <link rel="stylesheet" href="css/main.css">
+</head>
+<body class="telescord-body">
+
+    <!-- 1. МОДАЛЬНОЕ ОКНО АВТОРИЗАЦИИ -->
+    <div id="auth-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 id="auth-title" class="app-title">Вход</h2>
+            <form id="auth-form" class="auth-form">
+                <input type="text" id="auth-username" placeholder="Имя пользователя" required class="input-field">
+                <input type="email" id="auth-email" placeholder="Email (только для регистрации)" class="input-field" style="display: none;">
+                <input type="password" id="auth-password" placeholder="Пароль" required class="input-field">
+                <button type="submit" id="auth-submit" class="send-button">Войти</button>
+                <p id="toggle-auth" class="auth-link">Нет аккаунта? Зарегистрироваться</p>
+            </form>
+            <div id="auth-message" class="system-message hidden"></div>
+        </div>
+    </div>
+
+    <!-- 2. ОСНОВНОЙ ИНТЕРФЕЙС ЧАТА (с боковой панелью) -->
+    <div id="chat-app" class="chat-container hidden">
+        
+        <!-- HEADER -->
+        <header class="chat-header">
+            <h1 class="app-title">Telescord</h1>
+            <div class="user-info" id="user-profile-button">
+                <!-- Аватар теперь загружается по URL -->
+                <div class="avatar online" id="current-avatar"></div>
+                <span id="current-username">...</span>
+                <i class="fas fa-cog settings-icon"></i>
+            </div>
+        </header>
+
+        <!-- ГЛАВНАЯ ОБЛАСТЬ (Сайдбар + Чат) -->
+        <div class="main-content-area">
+            
+            <!-- Сайдбар Друзей -->
+            <aside class="sidebar">
+                <div class="sidebar-header">
+                    <h3><i class="fas fa-users"></i> Друзья и Заявки</h3>
+                    <button class="add-friend-button" id="add-friend-button" title="Добавить друга"><i class="fas fa-plus"></i></button>
+                </div>
+                
+                <section class="friend-requests-section">
+                    <h4><i class="fas fa-inbox"></i> Входящие заявки</h4>
+                    <ul id="requests-list" class="requests-list">
+                        <!-- Заявки здесь -->
+                    </ul>
+                </section>
+
+                <section class="friends-list-section">
+                    <h4><i class="fas fa-user-friends"></i> Ваши Друзья</h4>
+                    <ul id="friends-list" class="friends-list">
+                        <!-- Друзья здесь -->
+                    </ul>
+                </section>
+            </aside>
+
+            <!-- Окно ЛС -->
+            <div class="chat-main">
+                <div class="dm-header">
+                    <span id="dm-recipient-name">Выберите друга для начала чата</span>
+                </div>
+
+                <main id="chat-window" class="chat-window">
+                    <ul id="messages" class="message-list">
+                        <li class="system-message">Нажмите на друга в списке слева, чтобы начать личное сообщение.</li>
+                    </ul>
+                </main>
+
+                <!-- Фиксированный футер для ввода ЛС -->
+                <footer class="input-area dm-input-area hidden" id="dm-input-area">
+                    <form id="dm-form" class="message-form">
+                        <!-- Кнопка прикрепления файла -->
+                        <label for="media-upload" class="attach-button" title="Прикрепить медиа-файл">
+                            <i class="fas fa-paperclip"></i>
+                        </label>
+                        <!-- input type=file, который запускает логику загрузки -->
+                        <input type="file" id="media-upload" style="display: none;" accept="image/*,video/mp4,audio/mp3">
+                        
+                        <input id="dm-input" autocomplete="off" placeholder="Введите сообщение..." class="message-input" />
+                        <button class="send-button" type="submit">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </form>
+                </footer>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 3. МОДАЛЬНОЕ ОКНО НАСТРОЕК ПРОФИЛЯ -->
+    <div id="settings-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <button class="close-modal" id="close-settings"><i class="fas fa-times"></i></button>
+            <h2 class="app-title">Настройки Профиля</h2>
+            <form id="profile-settings-form" class="auth-form">
+                <p class="setting-label">Аватар:</p>
+                <div class="avatar-upload-area">
+                    <!-- img для предпросмотра -->
+                    <img id="preview-avatar" alt="Текущий аватар" class="avatar large" src="/uploads/default_anon.png">
+                    <!-- input для загрузки аватара -->
+                    <input type="file" id="avatar-input" accept="image/png, image/jpeg" style="display: none;">
+                    <button type="button" class="send-button small" onclick="document.getElementById('avatar-input').click()">
+                        <i class="fas fa-upload"></i> Загрузить
+                    </button>
+                </div>
+                <input type="text" id="settings-username" placeholder="Имя пользователя" class="input-field" disabled> 
+                <button type="submit" class="send-button" style="margin-top: 20px;">Сохранить изменения (аватар)</button>
+                <button type="button" class="send-button danger" id="logout-button">Выход</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 4. МОДАЛЬНОЕ ОКНО ДОБАВЛЕНИЯ ДРУГА -->
+    <div id="add-friend-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <button class="close-modal" id="close-add-friend"><i class="fas fa-times"></i></button>
+            <h2 class="app-title">Добавить Друга</h2>
+            <form id="add-friend-form" class="auth-form">
+                <input type="text" id="target-username" placeholder="Имя пользователя для заявки" required class="input-field">
+                <button type="submit" class="send-button">Отправить заявку</button>
+            </form>
+            <div id="add-friend-message" class="system-message hidden"></div>
+        </div>
+    </div>
+
+    <!-- Подключение библиотеки Socket.IO и клиентской логики -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/client.js"></script>
+</body>
+</html>
