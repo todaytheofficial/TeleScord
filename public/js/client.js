@@ -88,6 +88,9 @@ function updateUserInfo(username, avatarUrl) {
 function renderFriends(friends) {
     friendsList.innerHTML = '';
     currentFriends = friends;
+    if (friends.length === 0) {
+        friendsList.innerHTML = '<li class="system-message small">У вас пока нет друзей.</li>';
+    }
     friends.forEach(friend => {
         const li = document.createElement('li');
         li.className = 'friend-item';
@@ -141,13 +144,12 @@ function renderRequests(requests) {
         };
         actions.appendChild(acceptBtn);
 
-        // rejectBtn (пока не обрабатываем reject на сервере, но для UI)
         const rejectBtn = document.createElement('button');
         rejectBtn.className = 'send-button small reject';
         rejectBtn.textContent = 'Отклонить';
         rejectBtn.onclick = (e) => {
             e.stopPropagation();
-            // handleFriendAction(req.id, 'reject'); 
+            // В реальном приложении здесь будет handleFriendAction(req.id, 'reject');
             showMessage(authMessage, `Заявка от ${req.username} отклонена. (Мок)`, false);
             // Имитация удаления из списка
             currentRequests = currentRequests.filter(r => r.id !== req.id);
@@ -162,22 +164,69 @@ function renderRequests(requests) {
 
 // --- Логика ЛС (DM) ---
 
-function openDM(recipient) {
+/**
+ * Рендерит историю сообщений, полученную с сервера.
+ * @param {Array} messagesHistory - Массив объектов сообщений.
+ */
+function renderChatHistory(messagesHistory) {
+    messages.innerHTML = ''; // Очищаем от системного сообщения/заглушки
+
+    if (messagesHistory.length === 0) {
+        messages.innerHTML = '<li class="system-message">Начните свой диалог!</li>';
+    } else {
+        messagesHistory.forEach(message => {
+            // Используем ту же функцию appendMessage для рендеринга
+            appendMessage(message); 
+        });
+    }
+    scrollToBottom();
+}
+
+/*** 
+ * @param {object} recipient - Объект друга, с которым открывается чат.
+ */
+async function openDM(recipient) {
+    // 🌟 НОВОЕ УСЛОВИЕ: Проверяем, не открыт ли чат уже с этим собеседником
+    if (currentDMRecipient && currentDMRecipient.id === recipient.id) {
+        console.log('Чат с этим пользователем уже открыт. Игнорируем повторный клик.');
+        return; // Выходим из функции
+    }
+
+    // 1. Обновление UI
     currentDMRecipient = recipient;
     dmRecipientName.textContent = `Чат с ${recipient.username}`;
     dmInputArea.classList.remove('hidden');
-    messages.innerHTML = `<li class="system-message">Начало чата с ${recipient.username}.</li>`;
-    
-    // Снимаем класс active со всех и добавляем к текущему
+
+    // Снимаем активный класс со всех и добавляем к текущему
     document.querySelectorAll('.friend-item').forEach(item => item.classList.remove('active'));
-    document.querySelector(`[data-user-id="${recipient.id}"]`).classList.add('active');
-    
-    // В реальном приложении здесь будет загрузка истории сообщений
+    const recipientElement = document.querySelector(`[data-user-id="${recipient.id}"]`);
+    if (recipientElement) {
+        recipientElement.classList.add('active');
+    }
+
+    // 2. Загрузка истории с сервера
+    messages.innerHTML = '<li class="system-message">Загрузка истории...</li>'; 
+
+    try {
+        const response = await fetch(`${API_URL}/messages/history/${recipient.id}`);
+        if (response.ok) {
+            const history = await response.json();
+            renderChatHistory(history); 
+        } else {
+            messages.innerHTML = '<li class="system-message error">Ошибка загрузки истории чата.</li>';
+        }
+    } catch (error) {
+        console.error('Ошибка загрузки истории:', error);
+        messages.innerHTML = '<li class="system-message error">Ошибка сети при загрузке истории.</li>';
+    }
 }
+
 
 function appendMessage(data) {
     // Если сообщение не предназначено текущему открытому DM, игнорируем его
-    if (data.senderId !== currentDMRecipient?.id && data.receiverId !== currentDMRecipient?.id) {
+    // Мы убираем это условие, так как history теперь загружает только нужные сообщения.
+    // Оставляем только проверку на текущего собеседника для сообщений, приходящих в реальном времени.
+    if (!data.isHistory && data.senderId !== currentDMRecipient?.id && data.receiverId !== currentDMRecipient?.id && data.senderId !== currentUserId) {
         return;
     }
     
@@ -189,8 +238,9 @@ function appendMessage(data) {
         item.classList.add('outgoing');
     }
     
-    // Автор (только если не исходящее, иначе понятно)
-    const authorName = isOutgoing ? currentUsername : currentDMRecipient.username;
+    // Автор 
+    // Для загруженных сообщений может прийти `author`, но для входящих real-time нужен `currentDMRecipient?.username`
+    const authorName = isOutgoing ? currentUsername : currentDMRecipient?.username || data.author || "Неизвестно";
 
     const authorSpan = document.createElement('span');
     authorSpan.textContent = authorName;
@@ -203,25 +253,34 @@ function appendMessage(data) {
         mediaContainer.className = 'media-container';
         let mediaElement;
 
-        if (data.mediaType.startsWith('image')) {
+        const mediaType = data.mediaType || '';
+
+        if (mediaType.startsWith('image')) {
             mediaElement = document.createElement('img');
-        } else if (data.mediaType.startsWith('video')) {
+            mediaElement.alt = "Изображение от пользователя";
+        } else if (mediaType.startsWith('video')) {
             mediaElement = document.createElement('video');
             mediaElement.controls = true;
-        } else if (data.mediaType.startsWith('audio')) {
+            mediaElement.autoplay = false;
+        } else if (mediaType.startsWith('audio')) {
             mediaElement = document.createElement('audio');
             mediaElement.controls = true;
+        } else {
+             // Если тип медиа неизвестен или не поддерживается, выводим ошибку/заглушку
+             item.appendChild(document.createTextNode(`[Файл не поддерживается: ${mediaType}]`));
         }
 
         if (mediaElement) {
             mediaElement.src = data.mediaData; 
-            mediaElement.style.maxWidth = '300px'; 
             mediaContainer.appendChild(mediaElement);
             item.appendChild(mediaContainer);
         }
+        
         // Добавляем текстовое описание, если оно есть
-        if (data.message) {
-             item.appendChild(document.createTextNode(data.message));
+        if (data.message && data.message.trim()) {
+              const textNode = document.createElement('p');
+              textNode.textContent = data.message;
+              item.appendChild(textNode);
         }
     } else {
         item.appendChild(document.createTextNode(data.message));
@@ -231,34 +290,30 @@ function appendMessage(data) {
     scrollToBottom();
 }
 
-// --- API ХЕНДЛЕРЫ ---
+// --- API ХЕНДЛЕРЫ (остаются без изменений) ---
 
-/**
- * Инициализирует сессию: либо проверяет куки и загружает данные, либо
- * просто загружает данные (друзей/заявки/socket) после успешного логина.
- * @param {boolean} skipUiToggle - Флаг, указывающий, нужно ли переключать UI (true, если UI уже переключен в authForm.submit)
- */
 async function initializeSession(skipUiToggle = false) {
     try {
         const response = await fetch(`${API_URL}/verify`);
         if (response.ok) {
             const data = await response.json();
             
-            // Если мы не пришли из формы логина, нам нужно обновить всю информацию
+            currentUserId = data.userId;
+            updateUserInfo(data.username, data.avatarPath);
+
             if (!skipUiToggle) {
-                 currentUserId = data.userId;
-                 updateUserInfo(data.username, data.avatarPath);
                  toggleAppVisibility(true);
             }
             
-            // Загружаем списки друзей/заявок и регистрируем сокет
+            // Загружаем списки друзей/заявок 
             renderFriends(data.friends);
             renderRequests(data.requestsReceived);
+            
+            // Регистрируем сокет (даже если skipUiToggle = true, это нужно делать)
             socket.emit('register_socket', { userId: data.userId, username: data.username });
 
         } else if (!skipUiToggle) {
             toggleAppVisibility(false);
-            // Это нормально, если куки нет при первом входе
         }
     } catch (error) {
         console.error('Ошибка проверки аутентификации:', error);
@@ -291,18 +346,14 @@ authForm.addEventListener('submit', async (e) => {
         showMessage(authMessage, data.message, isError);
 
         if (response.ok) {
-            // 1. Обновляем UI мгновенно, используя данные ответа
-            currentUserId = data.userId;
-            updateUserInfo(data.username, data.avatarPath);
-            toggleAppVisibility(true);
-            
-            // Очистка полей после успешной отправки для безопасности и UX
+            // Очистка полей
             authUsernameInput.value = '';
             authPasswordInput.value = '';
             authEmail.value = '';
+            authMessage.classList.add('hidden'); 
             
-            // 2. В фоновом режиме загружаем списки друзей и регистрируем сокет.
-            initializeSession(true); 
+            // Инициализация сессии, которая обновит UI и зарегистрирует сокет
+            initializeSession(false); 
         }
     } catch (error) {
         console.error('Ошибка сети:', error);
@@ -320,6 +371,7 @@ settingsForm.addEventListener('submit', async (e) => {
         formData.append('avatar', avatarFile);
         
         try {
+            // Загрузка аватара (сервер вернет новый URL placeholder)
             const response = await fetch(`${API_URL}/profile/avatar`, {
                 method: 'POST',
                 body: formData 
@@ -348,34 +400,40 @@ dmForm.addEventListener('submit', async (e) => {
     const textMessage = dmInput.value.trim();
     const file = mediaUploadInput.files[0];
     
-    if (!currentDMRecipient) return;
+    if (!currentDMRecipient) {
+        showMessage(authMessage, 'Сначала выберите собеседника!', true);
+        return;
+    }
 
     if (file) {
         // 1. Обработка файла
+        const mimeType = file.type || 'application/octet-stream';
         
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            
-            // Отправляем на сервер только мета-данные файла для имитации загрузки
-            socket.emit('media_upload', {
-                filename: file.name,
-                mimeType: file.type
-            }, (response) => {
-                // Сервер вернул успешный URL
-                if (response.success) {
-                    socket.emit('dm_message', {
-                        receiverId: currentDMRecipient.id,
-                        message: textMessage, // Текст с файлом
-                        author: currentUsername,
-                        senderId: currentUserId,
-                        isMedia: true,
-                        mediaType: file.type,
-                        mediaData: response.url // URL полученный с сервера
-                    });
+        // Отправляем на сервер только мета-данные файла для имитации загрузки
+        socket.emit('media_upload', {
+            filename: file.name,
+            mimeType: mimeType
+        }, (response) => {
+            if (response.success) {
+                // Если файл - не изображение, предупреждаем, что будет заглушка
+                if (!mimeType.startsWith('image')) {
+                    showMessage(authMessage, `Видео/аудио не могут быть загружены в этой среде, будет использована заглушка: ${response.url}`, false);
                 }
-            });
-        };
-        reader.readAsDataURL(file); // Читаем для запуска логики
+                
+                socket.emit('dm_message', {
+                    receiverId: currentDMRecipient.id,
+                    message: textMessage, 
+                    author: currentUsername,
+                    senderId: currentUserId,
+                    isMedia: true,
+                    mediaType: mimeType,
+                    mediaData: response.url
+                });
+            } else {
+                 showMessage(authMessage, 'Ошибка при обработке файла.', true);
+            }
+        });
+
     } else if (textMessage) {
         // 2. Отправка текстового сообщения
         socket.emit('dm_message', { 
@@ -425,12 +483,7 @@ async function handleFriendAction(senderId, action) {
             const data = await response.json();
             
             if (response.ok) {
-                // Обновляем списки локально
-                const newFriend = data.newFriend;
-                currentFriends.push(newFriend);
-                currentRequests = currentRequests.filter(req => req.id !== senderId);
-                renderFriends(currentFriends);
-                renderRequests(currentRequests);
+                // Сервер обработал обновление и отправил 'friend_update' всем участникам через Socket.IO.
                 showMessage(authMessage, data.message, false);
             } else {
                  showMessage(authMessage, data.message || 'Ошибка принятия заявки.', true);
@@ -445,18 +498,18 @@ async function handleFriendAction(senderId, action) {
 
 socket.on('dm_message', (data) => {
     // Входящее сообщение, которое нужно отобразить
-    // Обновляем текущий чат, если мы в нем находимся
-    if (data.senderId === currentDMRecipient?.id || data.receiverId === currentDMRecipient?.id) {
-        // Мы уже обрабатываем отображение в appendMessage
-        appendMessage(data);
-    } else if (data.receiverId === currentUserId) {
-        // Если это сообщение нам, но не в текущем чате, можно показать уведомление
-        console.log(`[Уведомление] Новое DM от ${data.author}`);
-        // В реальном проекте здесь будет мигание иконки друга
-    }
+    appendMessage(data);
 });
 
-// --- UI ХЕНДЛЕРЫ (Открытие/Закрытие Модальных окон) ---
+// НОВОЕ: Обработчик для обновления списка друзей/заявок
+socket.on('friend_update', () => {
+    // Вызываем полную инициализацию, чтобы перечитать списки с сервера
+    initializeSession(true); 
+    showMessage(authMessage, 'Обновлен список друзей или заявок!', false);
+});
+
+
+// --- UI ХЕНДЛЕРЫ (Открытие/Закрытие Модальных окон) (Без изменений) ---
 
 authToggle.addEventListener('click', () => {
     isRegisterMode = !isRegisterMode;
@@ -466,6 +519,11 @@ authToggle.addEventListener('click', () => {
     document.getElementById('auth-submit').textContent = isRegisterMode ? 'Зарегистрироваться' : 'Войти';
     authToggle.textContent = isRegisterMode ? 'Уже есть аккаунт? Войти' : 'Нет аккаунта? Зарегистрироваться';
     authMessage.classList.add('hidden'); // Очищаем сообщение
+    
+    // Очистка полей при переключении режима
+    authUsernameInput.value = '';
+    authPasswordInput.value = '';
+    authEmail.value = '';
 });
 
 profileButton.addEventListener('click', () => settingsModal.classList.remove('hidden'));
@@ -488,7 +546,7 @@ logoutButton.addEventListener('click', async () => {
     currentUserId = null;
     currentUsername = null;
     currentDMRecipient = null;
-    updateUserInfo("...", "/uploads/default_anon.png");
+    updateUserInfo("...", "https://placehold.co/512x512/3F51B5/FFFFFF/png?text=TS"); // Сброс на надежный placeholder
     toggleAppVisibility(false);
     messages.innerHTML = '<li class="system-message">🚀 Ожидание подключения и авторизации...</li>';
     dmInputArea.classList.add('hidden');

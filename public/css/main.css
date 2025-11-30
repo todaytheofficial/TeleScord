@@ -309,16 +309,20 @@
 }
 .attach-button:hover { background: rgba(255, 255, 255, 0.25); }
 
-/* --- Медиа в сообщениях (для файлов) --- */
+/* --- Медиа в сообщениях (Улучшено для full-size изображений и видео) --- */
 .media-container {
     margin: 5px 0;
+    max-width: 300px; /* Ограничиваем максимальный размер медиа */
 }
 .media-container img, .media-container video, .media-container audio {
     max-width: 100%;
-    max-height: 300px;
     height: auto;
     border-radius: 8px;
     display: block;
+    object-fit: contain; /* Картинки будут отображаться полностью, сохраняя пропорции */
+}
+.media-container video {
+    background-color: #000; /* Фон для видео */
 }
 
 /* --- Модальные окна и Формы --- */

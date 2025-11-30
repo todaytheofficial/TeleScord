@@ -21,7 +21,6 @@
             <h2 id="auth-title" class="app-title">Вход</h2>
             <form id="auth-form" class="auth-form">
                 <input type="text" id="auth-username" placeholder="Имя пользователя" required class="input-field">
-                <!-- ИСПРАВЛЕНИЕ: Поле Email изначально скрыто и показывается только при регистрации -->
                 <input type="email" id="auth-email" placeholder="Email (только для регистрации)" class="input-field" style="display: none;">
                 <input type="password" id="auth-password" placeholder="Пароль" required class="input-field">
                 <button type="submit" id="auth-submit" class="send-button">Войти</button>
@@ -38,8 +37,8 @@
         <header class="chat-header">
             <h1 class="app-title">Telescord</h1>
             <div class="user-info" id="user-profile-button">
-                <!-- Аватар теперь загружается по URL -->
-                <div class="avatar online" id="current-avatar"></div>
+                <!-- Аватар теперь загружается по URL. Используем надежный placeholder по умолчанию -->
+                <div class="avatar online" id="current-avatar" style="background-image: url('https://placehold.co/512x512/3F51B5/FFFFFF/png?text=TS');"></div>
                 <span id="current-username">...</span>
                 <i class="fas fa-cog settings-icon"></i>
             </div>
@@ -90,7 +89,7 @@
                             <i class="fas fa-paperclip"></i>
                         </label>
                         <!-- input type=file, который запускает логику загрузки -->
-                        <input type="file" id="media-upload" style="display: none;" accept="image/*,video/mp4,audio/mp3">
+                        <input type="file" id="media-upload" style="display: none;" accept="image/*,video/*,audio/*">
                         
                         <input id="dm-input" autocomplete="off" placeholder="Введите сообщение..." class="message-input" />
                         <button class="send-button" type="submit">
@@ -110,8 +109,8 @@
             <form id="profile-settings-form" class="auth-form">
                 <p class="setting-label">Аватар:</p>
                 <div class="avatar-upload-area">
-                    <!-- img для предпросмотра -->
-                    <img id="preview-avatar" alt="Текущий аватар" class="avatar large" src="/uploads/default_anon.png">
+                    <!-- img для предпросмотра. Используем надежный placeholder по умолчанию -->
+                    <img id="preview-avatar" alt="Текущий аватар" class="avatar large" src="https://placehold.co/512x512/3F51B5/FFFFFF/png?text=TS">
                     <!-- input для загрузки аватара -->
                     <input type="file" id="avatar-input" accept="image/png, image/jpeg" style="display: none;">
                     <button type="button" class="send-button small" onclick="document.getElementById('avatar-input').click()">

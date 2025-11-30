@@ -2,75 +2,136 @@
 
 const express = require('express');
 const router = express.Router();
-const multer = require('multer'); // Для обработки загрузки файлов
-const path = require('path');
-// const bcrypt = require('bcryptjs'); // В реальном проекте
-// const jwt = require('jsonwebtoken'); // В реальном проекте
+const multer = require('multer'); 
+// const bcrypt = require('bcryptjs'); // В реальном проекте, используйте bcrypt для хэширования!
 
 // --- КОНФИГУРАЦИЯ MULTER (Хранение файлов) ---
-// Хранение в памяти (для простоты) или на диске
-const storage = multer.memoryStorage(); // Используем память для Canvas
+const storage = multer.memoryStorage(); 
 const upload = multer({ storage: storage });
 
-// --- СТАТУС КОДА (Для более наглядного тестирования) ---
-const SECRET_KEY = 'YOUR_SUPER_SECRET_KEY';
-const JWT_EXPIRE_TIME = '1h';
+// --- КОНСТАНТЫ ИМИДЖЕЙ ---
+// Надежные Placeholder URL в высоком разрешении 512x512
+const AVATAR_PLACEHOLDER = 'https://placehold.co/512x512/3F51B5/FFFFFF/png?text=TS';
+const DEFAULT_AVATARS = {
+    'ТестовыйПользователь': 'https://placehold.co/512x512/5C70D0/FFFFFF/png?text=T',
+    'Лена': 'https://placehold.co/512x512/4CAF50/FFFFFF/png?text=L',
+    'Андрей': 'https://placehold.co/512x512/F44336/FFFFFF/png?text=A',
+    'НовыйДруг': 'https://placehold.co/512x512/FF9800/FFFFFF/png?text=N'
+};
 
-// --- ЗАГЛУШКИ (Мок-БД и Мок-функции) ---
-const DUMMY_USERS = [
-    // Обратите внимание: avatarPath теперь указывает на место, где будет храниться файл
-    { id: 'user123', username: 'ТестовыйПользователь', passwordHash: 'hashedpassword', email: 'test@example.com', avatarPath: '/uploads/default_tp.png', friends: ['user456', 'user789'], requestsSent: [], requestsReceived: [] },
-    { id: 'user456', username: 'Лена', passwordHash: 'hashedpassword', email: 'lena@ex.com', avatarPath: '/uploads/default_lena.png', friends: ['user123'], requestsSent: [], requestsReceived: [] },
-    { id: 'user789', username: 'Андрей', passwordHash: 'hashedpassword', email: 'andrei@ex.com', avatarPath: '/uploads/default_andrei.png', friends: ['user123'], requestsSent: ['user101'], requestsReceived: [] },
-    { id: 'user101', username: 'НовыйДруг', passwordHash: 'hashedpassword', email: 'new@ex.com', avatarPath: '/uploads/default_new.png', friends: [], requestsSent: [], requestsReceived: ['user789'] }
-];
+// --- ВНИМАНИЕ: МОК-ФУНКЦИИ БЕЗОПАСНОСТИ ---
+// В реальном приложении НИКОГДА не храните пароли в открытом виде.
+// Используйте библиотеки, такие как 'bcrypt', для хэширования.
+const MOCK_PASSWORD_FOR_TEST_USERS = 'password123';
+const comparePassword = (inputPassword, storedPassword) => inputPassword === storedPassword; 
+const hashPassword = (password) => password; // Для мока мы просто храним пароль в открытом виде
 
-// Имитация хэширования и проверки
-const hashPassword = (password) => 'hashedpassword';
-const comparePassword = (password, hash) => hash === 'hashedpassword'; 
+// --- ИМИТАЦИЯ БАЗЫ ДАННЫХ SQLite (В ПАМЯТИ) ---
+// Этот класс имитирует асинхронное взаимодействие с SQLite
+class SQLiteMockDB {
+    constructor() {
+        this.users = {}; // Key: userId, Value: userObject
+        this.initializeData();
+    }
+
+    // Загрузка начальных мок-данных
+    initializeData() {
+        // Мы используем MOCK_PASSWORD_FOR_TEST_USERS как "хэш" для имитации
+        const mockUsers = [
+            { id: 'user123', username: 'ТестовыйПользователь', password: MOCK_PASSWORD_FOR_TEST_USERS, email: 'test@example.com', avatarPath: DEFAULT_AVATARS['ТестовыйПользователь'], friends: ['user456', 'user789'], requestsSent: [], requestsReceived: [] },
+            { id: 'user456', username: 'Лена', password: MOCK_PASSWORD_FOR_TEST_USERS, email: 'lena@ex.com', avatarPath: DEFAULT_AVATARS['Лена'], friends: ['user123'], requestsSent: [], requestsReceived: [] },
+            { id: 'user789', username: 'Андрей', password: MOCK_PASSWORD_FOR_TEST_USERS, email: 'andrei@ex.com', avatarPath: DEFAULT_AVATARS['Андрей'], friends: ['user123'], requestsSent: ['user101'], requestsReceived: [] },
+            { id: 'user101', username: 'НовыйДруг', password: MOCK_PASSWORD_FOR_TEST_USERS, email: 'new@ex.com', avatarPath: DEFAULT_AVATARS['НовыйДруг'], friends: [], requestsSent: [], requestsReceived: ['user789'] }
+        ];
+        mockUsers.forEach(user => this.users[user.id] = user);
+    }
+
+    // Имитация DB-операций (все асинхронны)
+    async run(sql, params) { 
+        // В реальной жизни: db.run(sql, params, callback)
+        // Здесь просто имитация задержки и успеха
+        await new Promise(resolve => setTimeout(resolve, 5));
+        return { changes: 1 };
+    }
+
+    async get(sql, params) {
+        // В реальной жизни: db.get(sql, params, callback)
+        await new Promise(resolve => setTimeout(resolve, 5));
+        const username = params.username || params.email;
+        if (username) return Object.values(this.users).find(u => u.username === username || u.email === username);
+        if (params.id) return this.users[params.id];
+        return null;
+    }
+
+    // Имитация findUserById
+    async findUserById(id) {
+        return await this.get('SELECT * FROM users WHERE id = ?', { id });
+    }
+
+    // Имитация findUserByUsername
+    async findUserByUsername(username) {
+        return await this.get('SELECT * FROM users WHERE username = ?', { username });
+    }
+
+    // Имитация сохранения/обновления пользователя
+    async saveUser(user) {
+        // В реальной жизни: INSERT OR REPLACE INTO users (...) VALUES (...)
+        await this.run('INSERT OR REPLACE INTO users VALUES (...)', user);
+        this.users[user.id] = user;
+        return user;
+    }
+}
+
+const dbMock = new SQLiteMockDB();
+
+// --- Вспомогательные Функции ---
+
 const generateToken = (payload) => `JWT_Token_${payload.id}`; 
 const verifyToken = (token) => {
-    if (token.startsWith('JWT_Token_')) {
+    if (token && token.startsWith('JWT_Token_')) {
         return { id: token.replace('JWT_Token_', '') };
     }
     return null;
 };
 
-const findUserById = (id) => DUMMY_USERS.find(u => u.id === id);
-const findUserByUsername = (username) => DUMMY_USERS.find(u => u.username === username);
 
-const saveUserToDB = (user) => {
-    const index = DUMMY_USERS.findIndex(u => u.id === user.id);
-    if (index !== -1) {
-        DUMMY_USERS[index] = user;
-    } else {
-        DUMMY_USERS.push(user);
-    }
-    console.log(`[DB MOCK] Пользователь ${user.username} обновлен.`);
+/**
+ * Преобразует ID друзей/заявок в полные объекты пользователя.
+ * @param {Array<string>} ids - массив ID пользователей
+ */
+const mapIdsToUsers = async (ids) => {
+    const users = await Promise.all(ids.map(id => dbMock.findUserById(id)));
+    return users.filter(u => u).map(u => ({
+        id: u.id,
+        username: u.username,
+        avatarPath: u.avatarPath 
+    }));
 };
 
-// --- Middleware для проверки аутентификации (проверяет куки) ---
-const authMiddleware = (req, res, next) => {
+// --- Middleware для проверки аутентификации ---
+const authMiddleware = async (req, res, next) => {
     const token = req.cookies.auth_token;
-    if (!token) {
-        return res.status(401).json({ message: 'Нет токена аутентификации.' });
-    }
-
     const payload = verifyToken(token);
+    
     if (!payload) {
-        return res.status(401).json({ message: 'Недействительный токен.' });
+        return res.status(401).json({ message: 'Нет токена аутентификации или он недействителен.' });
     }
 
     req.userId = payload.id;
+    const user = await dbMock.findUserById(req.userId);
+    if (!user) {
+         return res.status(404).json({ message: 'Пользователь не найден.' });
+    }
+    req.user = user; // Прикрепляем объект пользователя к запросу
     next();
 };
 
 // --- Маршруты Аутентификации ---
 
 /** POST /api/auth/register: Регистрация */
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
     const { username, email, password } = req.body;
-    if (findUserByUsername(username)) {
+    if (await dbMock.findUserByUsername(username)) {
         return res.status(409).json({ message: 'Имя пользователя занято.' });
     }
 
@@ -79,26 +140,26 @@ router.post('/register', (req, res) => {
         id: userId,
         username,
         email,
-        passwordHash: hashPassword(password),
-        avatarPath: '/uploads/default_anon.png', // Дефолтный аватар
+        password: hashPassword(password), // Храним (мок) пароль
+        avatarPath: AVATAR_PLACEHOLDER, // Используем надежный placeholder
         friends: [],
         requestsSent: [],
         requestsReceived: []
     };
-    saveUserToDB(newUser);
+    await dbMock.saveUser(newUser);
     
     const token = generateToken({ id: userId });
-    // Куки устанавливаются: httpOnly=true (для безопасности), maxAge (1 час)
     res.cookie('auth_token', token, { httpOnly: true, maxAge: 3600000 });
     res.status(201).json({ message: 'Регистрация успешна.', userId, username, avatarPath: newUser.avatarPath });
 });
 
 /** POST /api/auth/login: Вход */
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
     const { username, password } = req.body;
-    const user = findUserByUsername(username);
+    const user = await dbMock.findUserByUsername(username);
 
-    if (!user || !comparePassword(password, user.passwordHash)) {
+    // ИСПРАВЛЕНО: Теперь сравниваем введенный пароль с сохраненным мок-паролем
+    if (!user || !comparePassword(password, user.password)) {
         return res.status(401).json({ message: 'Неверные данные для входа.' });
     }
 
@@ -114,39 +175,35 @@ router.post('/logout', (req, res) => {
 });
 
 /** GET /api/auth/verify: Проверка сессии (куки) */
-router.get('/verify', authMiddleware, (req, res) => {
-    const user = findUserById(req.userId);
-    if (!user) {
-         return res.status(404).json({ message: 'Пользователь не найден.' });
-    }
-    // Отправляем данные пользователя для инициализации UI
+router.get('/verify', authMiddleware, async (req, res) => {
+    const user = req.user;
+    
+    // Получаем полные данные для списков
+    const friends = await mapIdsToUsers(user.friends);
+    const requestsReceived = await mapIdsToUsers(user.requestsReceived);
+    
     res.json({ 
         userId: user.id, 
         username: user.username, 
         avatarPath: user.avatarPath,
-        friends: user.friends.map(id => findUserById(id)).filter(f => f),
-        requestsReceived: user.requestsReceived.map(id => findUserById(id)).filter(f => f)
+        friends: friends,
+        requestsReceived: requestsReceived
     });
 });
 
 // --- Маршруты Профиля и Файлов ---
 
 /** POST /api/auth/profile/avatar: Загрузка аватара */
-router.post('/profile/avatar', authMiddleware, upload.single('avatar'), (req, res) => {
-    // В реальном проекте, файл req.file сохраняется на диск, а путь - в БД
-    const user = findUserById(req.userId);
-    if (!user) {
-        return res.status(404).json({ message: 'Пользователь не найден.' });
-    }
+router.post('/profile/avatar', authMiddleware, upload.single('avatar'), async (req, res) => {
+    const user = req.user;
 
     if (req.file) {
-        // Имитация сохранения: используем уникальное имя для отображения в UI
-        // В реальном приложении этот путь должен указывать на сохраненный файл
-        const newAvatarPath = `/uploads/${user.id}_${Date.now()}_avatar.png`; 
-        user.avatarPath = newAvatarPath; 
-        saveUserToDB(user);
+        // Имитация сохранения: просто генерируем URL для отображения
+        const newAvatarPath = `https://placehold.co/512x512/3F51B5/FFFFFF/png?text=${user.username.substring(0,1)}_${Date.now()}`; 
         
-        console.log(`[FILE MOCK] Аватар для ${user.username} обновлен.`);
+        user.avatarPath = newAvatarPath; 
+        await dbMock.saveUser(user);
+        
         return res.json({ message: 'Аватар успешно обновлен.', avatarPath: newAvatarPath });
     }
 
@@ -156,48 +213,64 @@ router.post('/profile/avatar', authMiddleware, upload.single('avatar'), (req, re
 // --- Маршруты Друзей ---
 
 /** POST /api/auth/friends/request: Отправка заявки в друзья */
-router.post('/friends/request', authMiddleware, (req, res) => {
+router.post('/friends/request', authMiddleware, async (req, res) => {
     const { targetUsername } = req.body;
-    const sender = findUserById(req.userId);
-    const receiver = findUserByUsername(targetUsername);
+    const sender = req.user;
+    const receiver = await dbMock.findUserByUsername(targetUsername);
 
     if (!receiver) return res.status(404).json({ message: 'Пользователь не найден.' });
     if (sender.id === receiver.id) return res.status(400).json({ message: 'Нельзя добавить себя.' });
     if (sender.friends.includes(receiver.id)) return res.status(400).json({ message: 'Вы уже друзья.' });
     if (sender.requestsSent.includes(receiver.id)) return res.status(400).json({ message: 'Заявка уже отправлена.' });
-    if (receiver.requestsReceived.includes(sender.id)) return res.status(400).json({ message: 'Пользователь уже отправил вам заявку.' }); // Избегаем дубликатов
+    // Проверка на взаимную заявку
+    if (receiver.requestsReceived.includes(sender.id)) {
+        // Если получатель уже отправил заявку, автоматически принимаем ее
+        return res.status(400).json({ message: 'Этот пользователь уже отправил вам заявку. Примите ее!' }); 
+    }
 
-    // Имитация добавления заявки
+    // Обновляем БД
     sender.requestsSent.push(receiver.id);
     receiver.requestsReceived.push(sender.id);
-    saveUserToDB(sender);
-    saveUserToDB(receiver);
+    await dbMock.saveUser(sender);
+    await dbMock.saveUser(receiver);
     
-    // В реальном проекте здесь будет Socket.IO уведомление
+    // ВАЖНО: Уведомление в реальном времени (нужен доступ к Socket.IO)
+    if (router.socketNotifier) {
+        router.socketNotifier.notifyFriendUpdate(receiver.id, sender.id);
+    }
+
     res.json({ message: `Заявка в друзья отправлена ${targetUsername}.` });
 });
 
 /** POST /api/auth/friends/accept: Принятие заявки в друзья */
-router.post('/friends/accept', authMiddleware, (req, res) => {
+router.post('/friends/accept', authMiddleware, async (req, res) => {
     const { senderId } = req.body;
-    const acceptor = findUserById(req.userId);
-    const sender = findUserById(senderId);
+    const acceptor = req.user;
+    const sender = await dbMock.findUserById(senderId);
 
     if (!sender) return res.status(404).json({ message: 'Отправитель заявки не найден.' });
     if (!acceptor.requestsReceived.includes(senderId)) return res.status(400).json({ message: 'Нет входящей заявки от этого пользователя.' });
 
-    // Перемещаем из заявок в друзья
+    // Обновляем БД: удаляем заявки, добавляем в друзья
     acceptor.requestsReceived = acceptor.requestsReceived.filter(id => id !== senderId);
     sender.requestsSent = sender.requestsSent.filter(id => id !== acceptor.id);
 
-    // Добавляем в друзья
     acceptor.friends.push(senderId);
     sender.friends.push(acceptor.id);
 
-    saveUserToDB(acceptor);
-    saveUserToDB(sender);
+    await dbMock.saveUser(acceptor);
+    await dbMock.saveUser(sender);
+    
+    // ВАЖНО: Уведомление в реальном времени (нужен доступ к Socket.IO)
+    if (router.socketNotifier) {
+        // Уведомляем обоих
+        router.socketNotifier.notifyFriendUpdate(acceptor.id, sender.id);
+        router.socketNotifier.notifyFriendUpdate(sender.id, acceptor.id);
+    }
+    
+    const newFriendData = { id: sender.id, username: sender.username, avatarPath: sender.avatarPath };
 
-    res.json({ message: `Вы теперь друзья с ${sender.username}!`, newFriend: { id: sender.id, username: sender.username, avatarPath: sender.avatarPath } });
+    res.json({ message: `Вы теперь друзья с ${sender.username}!`, newFriend: newFriendData });
 });
 
 
